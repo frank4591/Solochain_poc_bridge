@@ -1,0 +1,27 @@
+{
+    "name": "hello_pt_blockchain",
+    "resource_spec": {},
+    "min_clients": 1,
+    "deploy_map": {
+        "app": [
+            "@ALL"
+        ]
+    },
+    "byoc": true,
+    "submitter_name": "admin@nvidia.com",
+    "submitter_org": "nvidia",
+    "submitter_role": "project_admin",
+    "job_folder_name": "hello_pt_blockchain",
+    "job_id": "7e563871-6b2d-4c3d-a655-dbf9da8e43e7",
+    "submit_time": 1771505769.5666993,
+    "submit_time_iso": "2026-02-19T18:26:09.566699+05:30",
+    "start_time": "",
+    "duration": "N/A",
+    "data_storage_format": 2,
+    "status": "SUBMITTED",
+    "schedule_history": [
+        "2026-02-19 18:26:10: scheduled"
+    ],
+    "schedule_count": 1,
+    "last_schedule_time": 1771505770.3018591
+}

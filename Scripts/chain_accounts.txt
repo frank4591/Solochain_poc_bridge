@@ -1,0 +1,11 @@
+# AccountName	SS58_Address (format 42)
+# Source for distribution: Bob. Recipients: all except Alice and Bob.
+
+Alice	5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
+Bob	5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty
+Charlie	5FLSigC9HGRKVhB9FiEo4Y3koPsNmBmLJbpXg2mp1hXcS59Y
+Dave	5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy
+Eve	5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw
+Ferdie	5CiPPseXPECbkjWCa6MnjNokrgYjMqmKndv2rSnekmSK2DjL
+One	5Fxune7f71ZbpP2FoY3mhYcmM596Erhv1gRue4nsPwkxMR4n
+Two	5CUjxa4wVKMj3FqKdqAUf7zcEMr4MYAjXeWmUf44B41neLmJ

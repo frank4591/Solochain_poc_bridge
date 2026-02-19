@@ -1,0 +1,9 @@
+# Bridge and chain client.
+substrate-interface>=1.7.0
+
+# If you run POC via python -m nvflare.cli (Option B), NVFlare CLI needs at least:
+pyhocon
+
+# Recommended: install full NVFlare from repo so `nvflare` command and all deps work:
+#   pip install -e ~/nvflare_dev/NVFlare
+# For the PyTorch job (hello_pt_blockchain): pip install -e "~/nvflare_dev/NVFlare[PT]"

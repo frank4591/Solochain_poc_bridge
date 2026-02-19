@@ -1,0 +1,8 @@
+{
+  "name": "hello_pt_blockchain",
+  "resource_spec": {},
+  "min_clients": 1,
+  "deploy_map": {
+    "app": ["@ALL"]
+  }
+}
