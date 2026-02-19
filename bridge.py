@@ -135,6 +135,8 @@ def run_bridge_once(
     agg_hash = _ensure_hash(agg_hash)
     log.info("Aggregated model hash: %s", agg_hash.hex())
 
+    # Reconnect to chain before finalize_round to avoid stale WebSocket (idle timeout after long job).
+    chain_client.reconnect()
     if not chain_client.finalize_round(subnet_id, round_num, agg_hash):
         log.error("finalize_round failed")
         return False

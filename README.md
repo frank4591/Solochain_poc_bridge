@@ -67,6 +67,10 @@ The bridge registers as the aggregator on chain, starts a round (`start_round`),
 - `start_nvflare.sh` – Start POC (server + 1 client).
 - `run_bridge.sh` – Run bridge with default env.
 
+## Chain connection robustness
+
+After the NVFlare job runs (often 2+ minutes), the WebSocket to the chain can idle out. The bridge reconnects to the chain right before `finalize_round` (after the job and hash computation) and retries `start_round` and `finalize_round` up to 3 times on connection/JSON errors, reconnecting before each retry. So a one-off `JSONDecodeError` or dropped connection during `finalize_round` is handled without failing the whole cycle.
+
 ## Funding
 
 If you see “insufficient balance” or “1010” from the chain, fund the aggregator account (e.g. `//Aggregator`) via the chain UI: http://172.206.89.225:8080 (Transfer from //Alice or another funded account).
