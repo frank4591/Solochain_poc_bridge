@@ -56,6 +56,14 @@ The bridge registers as the aggregator on chain, starts a round (`start_round`),
 | `AGGREGATOR_MNEMONIC` | `//Aggregator` | Aggregator keypair URI |
 | `JOB_MONITOR_TIMEOUT` | `600` | Max seconds to wait for job |
 | `JOB_POLL_INTERVAL` | `5` | Job status poll interval (seconds) |
+| `UPDATE_DEADLINE_BLOCKS` | `30` | Blocks after start_round before round becomes ValidatingUpdates (must pass before finalize_round). Lower = less wait after job. |
+| `VALIDATION_DEADLINE_BLOCKS` | `60` | Blocks for validation phase. |
+| `FINALIZE_WAIT_TIMEOUT` | `900` | Max seconds to wait for chain block >= update_deadline before finalize_round. |
+| `FINALIZE_WAIT_POLL` | `5` | Seconds between polls when waiting for update_deadline. |
+
+## RoundNotValidating and deadlines
+
+The chain only allows `finalize_round` when the round status is **ValidatingUpdates** or **Finalizing**. Status moves from CollectingUpdates to ValidatingUpdates when **current block > update_deadline**. So if the bridge calls `finalize_round` right after the job (e.g. 3 min later), the chain may still be in CollectingUpdates and return `RoundNotValidating`. The bridge now **waits** until the chain block is >= `update_deadline` (polling every `FINALIZE_WAIT_POLL` seconds) before calling `finalize_round`. Default `UPDATE_DEADLINE_BLOCKS=30` (e.g. ~3 min at 6 s/block) so the round is usually in ValidatingUpdates by the time the job finishes.
 
 ## Layout
 

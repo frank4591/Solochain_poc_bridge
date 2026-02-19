@@ -18,8 +18,9 @@ CHAIN_UI_URL = "http://172.206.89.225:8080"
 
 # POC: 1 aggregator (bridge), 1 subnet (subnet_id=0), 1 trainer
 DEFAULT_SUBNET_ID = 0
-DEFAULT_UPDATE_DEADLINE_BLOCKS = 100
-DEFAULT_VALIDATION_DEADLINE_BLOCKS = 200
+# finalize_round only allowed after update_deadline (round -> ValidatingUpdates). Job ~3 min; at 6s/block ~30 blocks.
+DEFAULT_UPDATE_DEADLINE_BLOCKS = 30
+DEFAULT_VALIDATION_DEADLINE_BLOCKS = 60
 
 
 @dataclass
@@ -44,6 +45,8 @@ class BridgeConfig:
     nvflare_admin_username: str = "admin@nvidia.com"
     job_monitor_timeout_sec: float = 600.0
     job_poll_interval_sec: float = 5.0
+    finalize_wait_timeout_sec: float = 900.0  # max wait for chain block >= update_deadline
+    finalize_wait_poll_sec: float = 5.0
 
 
 def get_chain_config() -> ChainConfig:
@@ -67,4 +70,6 @@ def get_bridge_config() -> BridgeConfig:
         nvflare_admin_username=os.getenv("NVFLARE_ADMIN_USERNAME", "admin@nvidia.com"),
         job_monitor_timeout_sec=float(os.getenv("JOB_MONITOR_TIMEOUT", "600")),
         job_poll_interval_sec=float(os.getenv("JOB_POLL_INTERVAL", "5")),
+        finalize_wait_timeout_sec=float(os.getenv("FINALIZE_WAIT_TIMEOUT", "900")),
+        finalize_wait_poll_sec=float(os.getenv("FINALIZE_WAIT_POLL", "5")),
     )

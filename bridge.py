@@ -99,12 +99,26 @@ def run_bridge_once(
         round_num = chain_client.get_current_round(subnet_id)
         if round_num <= 0:
             round_num = 1
+        update_deadline_this_round = update_deadline  # we set it at start_round
         log.info("Round started: subnet_id=%s round=%s", subnet_id, round_num)
     else:
         # start_round failed (e.g. RoundAlreadyActive) — complete the active round
         round_num = chain_client.get_current_round(subnet_id)
         if round_num <= 0:
             log.error("start_round failed and no active round (current_round=0)")
+            return False
+        round_info = chain_client.get_round_info(subnet_id, round_num)
+        if not round_info:
+            log.error("No round info for round %s; cannot get update_deadline", round_num)
+            return False
+        # Chain stores update_deadline in round info (block number when round moves to ValidatingUpdates).
+        ud = round_info.get("update_deadline") if isinstance(round_info, dict) else getattr(round_info, "update_deadline", None)
+        if ud is None:
+            log.error("Round info missing update_deadline: %s", round_info)
+            return False
+        update_deadline_this_round = int(ud)
+        if update_deadline_this_round <= 0:
+            log.error("Round info update_deadline invalid: %s", round_info)
             return False
         log.info("Round already active: subnet_id=%s round=%s (running job then finalizing)", subnet_id, round_num)
 
@@ -134,6 +148,20 @@ def run_bridge_once(
     agg_hash = _hash_model_file(model_path)
     agg_hash = _ensure_hash(agg_hash)
     log.info("Aggregated model hash: %s", agg_hash.hex())
+
+    # finalize_round is only allowed when round status is ValidatingUpdates or Finalizing (chain moves to that when current block > update_deadline).
+    # Wait until chain has reached update_deadline so we don't get RoundNotValidating.
+    deadline_wait_start = time.time()
+    while True:
+        current_block = chain_client.get_block_number()
+        if current_block >= update_deadline_this_round:
+            log.info("Chain block %s >= update_deadline %s; proceeding to finalize_round", current_block, update_deadline_this_round)
+            break
+        if time.time() - deadline_wait_start >= config.finalize_wait_timeout_sec:
+            log.error("Timeout waiting for chain block >= update_deadline %s (current=%s). finalize_round would return RoundNotValidating.", update_deadline_this_round, current_block)
+            return False
+        log.info("Waiting for chain block >= %s (current=%s); recheck in %ss", update_deadline_this_round, current_block, config.finalize_wait_poll_sec)
+        time.sleep(config.finalize_wait_poll_sec)
 
     # Reconnect to chain before finalize_round to avoid stale WebSocket (idle timeout after long job).
     chain_client.reconnect()
