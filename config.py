@@ -1,6 +1,6 @@
 """
 Configuration for blockchain–NVFlare POC bridge.
-Chain at 172.206.89.225; subnet_id = 0; 1 aggregator, 1 trainer.
+Chain at 172.206.89.225; subnet_id = 1 by default; 1 aggregator, 1 trainer.
 """
 import os
 from dataclasses import dataclass
@@ -16,8 +16,8 @@ MIN_TRAINER_STAKE = 100 * UNIT
 DEFAULT_BLOCKCHAIN_RPC = "ws://172.206.89.225:9944"
 CHAIN_UI_URL = "http://172.206.89.225:8080"
 
-# POC: 1 aggregator (bridge), 1 subnet (subnet_id=0), 1 trainer
-DEFAULT_SUBNET_ID = 0
+# POC: 1 aggregator (bridge), 1 subnet (subnet_id=1 by default)
+DEFAULT_SUBNET_ID = 1
 # finalize_round only allowed after update_deadline (round -> ValidatingUpdates). Job ~3 min; at 6s/block ~30 blocks.
 DEFAULT_UPDATE_DEADLINE_BLOCKS = 30
 DEFAULT_VALIDATION_DEADLINE_BLOCKS = 60
@@ -36,7 +36,7 @@ class ChainConfig:
 class BridgeConfig:
     chain: ChainConfig
     subnet_id: int = DEFAULT_SUBNET_ID
-    aggregator_mnemonic: str = "//Aggregator"  #   export AGGREGATOR_MNEMONIC="//Bob"
+    aggregator_mnemonic: str = "//Bob"  # aggregator per chain_accounts.txt
     update_deadline_blocks: int = DEFAULT_UPDATE_DEADLINE_BLOCKS
     validation_deadline_blocks: int = DEFAULT_VALIDATION_DEADLINE_BLOCKS
     # NVFlare POC: admin startup kit and job path
@@ -62,7 +62,7 @@ def get_bridge_config() -> BridgeConfig:
     return BridgeConfig(
         chain=get_chain_config(),
         subnet_id=int(os.getenv("SUBNET_ID", str(DEFAULT_SUBNET_ID))),
-        aggregator_mnemonic=os.getenv("AGGREGATOR_MNEMONIC", "//Aggregator"),
+        aggregator_mnemonic=os.getenv("AGGREGATOR_MNEMONIC", "//Bob"),
         update_deadline_blocks=int(os.getenv("UPDATE_DEADLINE_BLOCKS", str(DEFAULT_UPDATE_DEADLINE_BLOCKS))),
         validation_deadline_blocks=int(os.getenv("VALIDATION_DEADLINE_BLOCKS", str(DEFAULT_VALIDATION_DEADLINE_BLOCKS))),
         nvflare_poc_workspace=os.getenv("NVFLARE_POC_WORKSPACE") or os.path.join(os.path.dirname(root), "nvflare_poc_workspace"),

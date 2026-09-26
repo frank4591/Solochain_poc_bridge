@@ -1,5 +1,5 @@
 """
-Bridge: chain (SubnetFl subnet_id=0) <-> NVFlare POC.
+Bridge: chain (SubnetFl) <-> NVFlare POC. Uses config.subnet_id (default 1).
 Registers as aggregator, starts rounds on chain, runs NVFlare job per round,
 downloads aggregated model, reports hash to chain via finalize_round.
 """
@@ -62,12 +62,28 @@ def _hash_model_file(path: str) -> bytes:
     return h.digest()
 
 
+def _reconnect_nvflare(config: BridgeConfig, session_holder: dict):
+    """Close current NVFlare session, create a new one, try_connect, and update session_holder."""
+    sess = session_holder.get("sess")
+    if sess is not None:
+        try:
+            sess.close()
+        except Exception:
+            pass
+    new_sess = _nvflare_session(config)
+    new_sess.try_connect(10.0)
+    session_holder["sess"] = new_sess
+
+
 def run_bridge_once(
     config: BridgeConfig,
     chain_client: SubnetFlClient,
-    sess,
+    session_holder: dict,
 ) -> bool:
-    """Run one bridge cycle: start_round (or use current if RoundAlreadyActive) -> submit job -> wait -> download -> finalize_round."""
+    """Run one bridge cycle: start_round (or use current if RoundAlreadyActive) -> submit job -> wait -> download -> finalize_round.
+    session_holder must be a dict with key 'sess' (NVFlare session); it may be updated on reconnect.
+    """
+    sess = session_holder["sess"]
     subnet_id = config.subnet_id
 
     block = chain_client.get_block_number()
@@ -132,22 +148,65 @@ def run_bridge_once(
 
     from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
 
-    rc, _meta = sess.monitor_job_and_return_job_meta(
-        job_id,
-        timeout=config.job_monitor_timeout_sec,
-        poll_interval=config.job_poll_interval_sec,
-    )
+    _NVFLARE_RECONNECT_RETRIES = 5
+    _NVFLARE_RECONNECT_WAIT_SEC = 3
+
+    rc, _meta = None, None
+    for attempt in range(_NVFLARE_RECONNECT_RETRIES):
+        try:
+            rc, _meta = sess.monitor_job_and_return_job_meta(
+                job_id,
+                timeout=config.job_monitor_timeout_sec,
+                poll_interval=config.job_poll_interval_sec,
+            )
+            break
+        except (ConnectionError, OSError) as e:
+            if attempt + 1 >= _NVFLARE_RECONNECT_RETRIES:
+                log.error("NVFlare connection lost during job monitor; max retries reached: %s", e)
+                raise
+            log.warning(
+                "NVFlare connection lost during job monitor (attempt %s/%s): %s; reconnecting in %ss...",
+                attempt + 1,
+                _NVFLARE_RECONNECT_RETRIES,
+                e,
+                _NVFLARE_RECONNECT_WAIT_SEC,
+            )
+            time.sleep(_NVFLARE_RECONNECT_WAIT_SEC)
+            _reconnect_nvflare(config, session_holder)
+            sess = session_holder["sess"]
+
     if rc != MonitorReturnCode.JOB_FINISHED:
         log.error("Job did not finish: %s", rc)
         return False
 
-    result_path = sess.download_job_result(job_id)
+    result_path = None
+    for attempt in range(_NVFLARE_RECONNECT_RETRIES):
+        try:
+            result_path = sess.download_job_result(job_id)
+            break
+        except (ConnectionError, OSError) as e:
+            if attempt + 1 >= _NVFLARE_RECONNECT_RETRIES:
+                log.error("NVFlare connection lost during download; max retries reached: %s", e)
+                raise
+            log.warning(
+                "NVFlare connection lost during download (attempt %s/%s): %s; reconnecting in %ss...",
+                attempt + 1,
+                _NVFLARE_RECONNECT_RETRIES,
+                e,
+                _NVFLARE_RECONNECT_WAIT_SEC,
+            )
+            time.sleep(_NVFLARE_RECONNECT_WAIT_SEC)
+            _reconnect_nvflare(config, session_holder)
+            sess = session_holder["sess"]
     log.info("Job result downloaded to %s", result_path)
 
     model_path = _find_global_model_pt(result_path)
     agg_hash = _hash_model_file(model_path)
     agg_hash = _ensure_hash(agg_hash)
     log.info("Aggregated model hash: %s", agg_hash.hex())
+
+    # Reconnect to chain after long NVFlare job to avoid stale WebSocket (JSONDecodeError on empty response).
+    chain_client.reconnect()
 
     # finalize_round is only allowed when round status is ValidatingUpdates or Finalizing (chain moves to that when current block > update_deadline).
     # Wait until chain has reached update_deadline so we don't get RoundNotValidating.
@@ -184,7 +243,16 @@ def main():
         sys.exit(1)
 
     # Connect to chain and register
-    chain_client = SubnetFlClient(config.chain, keypair=kp)
+    try:
+        chain_client = SubnetFlClient(config.chain, keypair=kp)
+    except (ConnectionRefusedError, OSError) as e:
+        log.error(
+            "Cannot connect to chain at %s. Start the chain node or set BLOCKCHAIN_RPC. %s",
+            config.chain.rpc_url,
+            e,
+        )
+        log.info("Chain UI: %s", CHAIN_UI_URL)
+        sys.exit(1)
     if not chain_client.subnet_status_active(config.subnet_id):
         log.warning("Subnet %s not active; attempting register_aggregator anyway.", config.subnet_id)
     try:
@@ -201,9 +269,10 @@ def main():
         sys.exit(1)
 
     log.info("Bridge running: subnet_id=%s, job=%s", config.subnet_id, config.nvflare_job_path)
+    session_holder = {"sess": sess}
     try:
         while True:
-            ok = run_bridge_once(config, chain_client, sess)
+            ok = run_bridge_once(config, chain_client, session_holder)
             if not ok:
                 log.error("Bridge cycle failed; retrying in 30s")
                 time.sleep(30)

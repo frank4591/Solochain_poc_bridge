@@ -67,10 +67,18 @@ class SubnetFlClient:
         log.info("Chain connection reconnected to %s", self.config.rpc_url)
 
     def get_block_number(self) -> int:
-        """Current (chain head) block number."""
-        block_hash = self.substrate.get_chain_head()
-        block = self.substrate.get_block_number(block_hash) if block_hash else 0
-        return block or 0
+        """Current (chain head) block number. Reconnects and retries on stale connection (e.g. after long NVFlare job)."""
+        for attempt in range(CHAIN_RPC_RETRIES):
+            try:
+                block_hash = self.substrate.get_chain_head()
+                block = self.substrate.get_block_number(block_hash) if block_hash else 0
+                return block or 0
+            except CONNECTION_ERROR_TYPES as e:
+                if attempt < CHAIN_RPC_RETRIES - 1:
+                    log.warning("get_block_number chain error (attempt %s/%s): %s; reconnecting.", attempt + 1, CHAIN_RPC_RETRIES, e)
+                    self.reconnect()
+                else:
+                    raise
 
     def get_subnet(self, subnet_id: int) -> Optional[Dict[str, Any]]:
         result = self.substrate.query(
@@ -149,6 +157,38 @@ class SubnetFlClient:
         log.error("register_aggregator failed: %s", getattr(receipt, "error_message", receipt))
         return False
 
+    def register_trainer(
+        self,
+        subnet_id: int,
+        model_specialization: bytes,
+        stake_amount: int,
+    ) -> bool:
+        """register_trainer(origin, subnet_id, model_specialization, stake_amount). model_specialization: Vec<u8>, max 64 bytes."""
+        kp = self._ensure_keypair()
+        spec = list(model_specialization[:64])
+        call = self.substrate.compose_call(
+            call_module="SubnetFl",
+            call_function="register_trainer",
+            call_params={
+                "subnet_id": subnet_id,
+                "model_specialization": spec,
+                "stake_amount": stake_amount,
+            },
+        )
+        extrinsic = self.substrate.create_signed_extrinsic(call=call, keypair=kp)
+        try:
+            receipt = self.substrate.submit_extrinsic(extrinsic, wait_for_inclusion=True)
+        except SubstrateRequestException as e:
+            err = str(e).lower()
+            if "1010" in str(e) or "balance" in err or "fee" in err:
+                _log_funding_hint(kp.ss58_address, "trainer")
+            raise
+        if receipt.is_success:
+            log.info("register_trainer success, block %s", receipt.block_hash)
+            return True
+        log.error("register_trainer failed: %s", getattr(receipt, "error_message", receipt))
+        return False
+
     def start_round(
         self,
         subnet_id: int,
@@ -212,7 +252,28 @@ class SubnetFlClient:
                 if receipt.is_success:
                     log.info("finalize_round success, block %s", receipt.block_hash)
                     return True
-                log.error("finalize_round failed: %s", getattr(receipt, "error_message", receipt))
+                err = receipt.error_message if hasattr(receipt, "error_message") else None
+                if err is None and getattr(receipt, "block_hash", None):
+                    try:
+                        for ev in self.substrate.get_events(block_hash=receipt.block_hash) or []:
+                            attrs = getattr(ev, "value", ev) if not isinstance(ev, dict) else ev
+                            if isinstance(attrs, dict):
+                                mid, eid = attrs.get("module_id"), attrs.get("event_id")
+                                if (mid, eid) == ("System", "ExtrinsicFailed"):
+                                    disp = (attrs.get("attributes") or {})
+                                    if isinstance(disp, (list, tuple)) and len(disp) >= 1:
+                                        disp = disp[0]
+                                    err = disp.get("dispatch_error", disp)
+                                    break
+                    except Exception as e:
+                        log.warning("Could not get_events for finalize_round error: %s", e)
+                log.error("finalize_round failed: %s", err)
+                if err and isinstance(err, dict) and err.get("Token") == "FundsUnavailable":
+                    log.error(
+                        "Aggregator account has insufficient balance to pay tx fees. "
+                        "Fund it at %s (transfer to aggregator, e.g. //Bob).",
+                        CHAIN_UI_URL,
+                    )
                 return False
             except CONNECTION_ERROR_TYPES as e:
                 last_err = e
